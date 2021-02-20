@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"encoding/json"
 
 	"github.com/microsoft/hivedscheduler/pkg/algorithm"
 	si "github.com/microsoft/hivedscheduler/pkg/api"
