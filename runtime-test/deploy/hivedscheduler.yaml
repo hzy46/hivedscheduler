@@ -37,7 +37,7 @@ spec:
       containers:
       - name: hivedscheduler
         image: hzy46/hivedscheduler:test # 自己的镜像
-        imagePullPolicy: always # 后添加
+        imagePullPolicy: Always # 后添加
         command: [
           "bash", "-c",
           "cp /hivedscheduler-config/hivedscheduler.yaml . &&
