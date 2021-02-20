@@ -1,5 +1,7 @@
 # 删除多个hived pod
 # 需要满足：文件名是<pod-name>.yaml
+set -o errexit
+set -o nounset
 
 FILEPATH=$1
 FILENAME=`basename $FILEPATH`
@@ -12,3 +14,4 @@ kubectl get po | \
         kubectl delete po $po & 
     done
 wait
+echo 'ok'
