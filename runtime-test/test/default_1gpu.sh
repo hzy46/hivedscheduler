@@ -9,7 +9,7 @@ metadata:
       leafCellType: GENERIC-WORKER
       leafCellNumber: 1
       affinityGroup:
-        name: default_1gpu
+        name: test-hived-default-1gpu
         members:
           - podNumber: 1
             leafCellNumber: 1
