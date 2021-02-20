@@ -492,8 +492,7 @@ func (s *HivedScheduler) filterRoutine(args ei.ExtenderArgs) *ei.ExtenderFilterR
 	logPfx := fmt.Sprintf("[%v]: filterRoutine: ", internal.Key(pod))
 	klog.Infof(logPfx + "Started")
 
-	logPfx = fmt.Sprintf("[%v]: filterRoutine NodeNames: %v", internal.Key(pod), *args.NodeNames)
-	klog.Infof(logPfx)
+	klog.Infof(logPfx + "NodeNames: %v", *args.NodeNames)
 
 	defer internal.HandleRoutinePanic(logPfx)
 
