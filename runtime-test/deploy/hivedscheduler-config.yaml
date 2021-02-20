@@ -27,7 +27,7 @@ data:
       "apiVersion": "v1",
       "extenders": [
         {
-          "urlPrefix": "http://10.151.40.234:40000/v1/extender",
+          "urlPrefix": "http://10.151.40.234:30100/v1/extender",
           "filterVerb": "filter",
           "preemptVerb": "preempt",
           "bindVerb": "bind",
@@ -45,7 +45,7 @@ data:
       ]
     }
   hivedscheduler.yaml: |
-    webServerAddress: ":40000"
+    webServerAddress: ":30100"
     waitingPodSchedulingBlockMilliSec: 50
     physicalCluster:
       skuTypes:
