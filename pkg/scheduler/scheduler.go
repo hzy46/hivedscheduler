@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"encoding/json"
 
 	"github.com/microsoft/hivedscheduler/pkg/algorithm"
 	si "github.com/microsoft/hivedscheduler/pkg/api"
@@ -492,7 +493,8 @@ func (s *HivedScheduler) filterRoutine(args ei.ExtenderArgs) *ei.ExtenderFilterR
 	logPfx := fmt.Sprintf("[%v]: filterRoutine: ", internal.Key(pod))
 	klog.Infof(logPfx + "Started")
 
-	logPfx = fmt.Sprintf("[%v]: filterRoutine args: %+v\n", internal.Key(pod), args)
+	data, err := json.Marshal(args)
+	logPfx = fmt.Sprintf("[%v]: filterRoutine args: %s", internal.Key(pod), data)
 	klog.Infof(logPfx)
 
 	defer internal.HandleRoutinePanic(logPfx)
