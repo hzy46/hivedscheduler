@@ -3,8 +3,6 @@
 # 使用方法 bash create_a_lot.sh <pod-name>.yaml <number>
 set -o errexit
 set -o nounset
-set -o pipefail
-
 
 FILEPATH=$1
 NUM=$2
