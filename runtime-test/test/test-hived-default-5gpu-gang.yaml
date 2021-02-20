@@ -8,7 +8,7 @@ metadata:
       priority: 10
       pinnedCellId: null
       leafCellType: GENERIC-WORKER
-      leafCellNumber: 5
+      leafCellNumber: 1
       affinityGroup:
         name: test-hived-default-5gpu-gang
         members:
@@ -68,7 +68,7 @@ metadata:
       priority: 10
       pinnedCellId: null
       leafCellType: GENERIC-WORKER
-      leafCellNumber: 5
+      leafCellNumber: 1
       affinityGroup:
         name: test-hived-default-5gpu-gang
         members:
@@ -128,7 +128,7 @@ metadata:
       priority: 10
       pinnedCellId: null
       leafCellType: GENERIC-WORKER
-      leafCellNumber: 5
+      leafCellNumber: 1
       affinityGroup:
         name: test-hived-default-5gpu-gang
         members:
@@ -188,7 +188,7 @@ metadata:
       priority: 10
       pinnedCellId: null
       leafCellType: GENERIC-WORKER
-      leafCellNumber: 5
+      leafCellNumber: 1
       affinityGroup:
         name: test-hived-default-5gpu-gang
         members:
@@ -248,7 +248,7 @@ metadata:
       priority: 10
       pinnedCellId: null
       leafCellType: GENERIC-WORKER
-      leafCellNumber: 5
+      leafCellNumber: 1
       affinityGroup:
         name: test-hived-default-5gpu-gang
         members:
