@@ -11,7 +11,7 @@ NUM=$2
 FILENAME=`basename $FILEPATH`
 PODNAME=`echo $FILENAME | cut -d '.' -f 1`
 
-for i in {1..${NUM}}
+for i in $(seq 1 ${NUM})
 do
     RANDSTR=$(cat /dev/urandom | tr -dc 'a-z' | fold -w 5 | head -n 1)
     RANDNAME=${PODNAME}-${RANDSTR}
