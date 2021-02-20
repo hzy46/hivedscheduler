@@ -491,6 +491,10 @@ func (s *HivedScheduler) filterRoutine(args ei.ExtenderArgs) *ei.ExtenderFilterR
 
 	logPfx := fmt.Sprintf("[%v]: filterRoutine: ", internal.Key(pod))
 	klog.Infof(logPfx + "Started")
+
+	logPfx = fmt.Sprintf("[%v]: filterRoutine args: %+v\n", internal.Key(pod), args)
+	klog.Infof(logPfx)
+
 	defer internal.HandleRoutinePanic(logPfx)
 
 	podStatus := s.generalScheduleAdmissionCheck(s.podScheduleStatuses[pod.UID])
