@@ -1,0 +1,32 @@
+webServerAddress: ":30100"
+waitingPodSchedulingBlockMilliSec: 50
+physicalCluster:
+  cellTypes:
+    V100-SWITCH:
+      childCellType: V100
+      childCellNumber: 2
+    V100-CPU-SOCKET:
+      childCellType: V100-SWITCH
+      childCellNumber: 2
+    V100-NODE:
+      childCellType: V100-CPU-SOCKET
+      childCellNumber: 2
+      isNodeLevel: true
+    V100-NODE-POOL:
+      childCellType: V100-NODE
+      childCellNumber: 3
+  physicalCells:
+  - cellType: V100-NODE-POOL
+    cellChildren:
+    - cellAddress: node1
+    - cellAddress: node2
+    - cellAddress: node3
+virtualClusters:
+    vc1:
+      virtualCells:
+      - cellType: V100-NODE-POOL.V100-NODE
+        cellNumber: 2
+    vc2:
+      virtualCells:
+      - cellType: V100-NODE-POOL.V100-NODE
+        cellNumber: 1

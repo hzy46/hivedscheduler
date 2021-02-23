@@ -187,6 +187,7 @@ var pss = map[types.UID]api.PodSchedulingSpec{
 		LeafCellNumber:       1,
 		AffinityGroup:        group2,
 	}, "pod3": { // non-buddy of pod 1 & 2 (avoidance of preemption)
+		// 会放到和pod1, pod2同一台机器上，但是是在另外8个上（尽可能找最符合的完整cell）
 		VirtualCluster:       "VC1",
 		Priority:             2,
 		LazyPreemptionEnable: true,
@@ -234,7 +235,7 @@ var pss = map[types.UID]api.PodSchedulingSpec{
 		LeafCellType:         "",
 		LeafCellNumber:       7,
 		AffinityGroup:        group9,
-	}, "pod9": { // any leaf cell type; heterogeneous affinity group
+	}, "pod9": { // any leaf cell type; heterogeneous affinity group； 注意pod8和pod9是同一个aff group，另外pod9被分配到的1.0.0.2有多个cell type
 		VirtualCluster:       "VC2",
 		Priority:             1,
 		LazyPreemptionEnable: true,
@@ -250,7 +251,7 @@ var pss = map[types.UID]api.PodSchedulingSpec{
 		LeafCellType:         "DGX2-V100",
 		LeafCellNumber:       1,
 		AffinityGroup:        group6,
-	}, "pod11": { // invalid affinity group configuration
+	}, "pod11": { // invalid affinity group configuration。这个是leafCellNumber必须和aff group里面的对上
 		VirtualCluster:       "VC2",
 		Priority:             1,
 		LazyPreemptionEnable: true,
@@ -623,6 +624,7 @@ func TestHivedAlgorithm(t *testing.T) {
 
 	printConfig(t, h)
 	testNormalOperations(t, h)
+	// 传路径下去的都是重新init scheduler的
 	testSuggestedNodes(t, configFilePath)
 	testStatefulPreemption(t, configFilePath)
 	testBadNodes(t, configFilePath)
@@ -655,15 +657,26 @@ func setHealthyNodes(h *HivedAlgorithm) {
 
 func printConfig(t *testing.T, h *HivedAlgorithm) {
 	for chain, ccl := range h.fullCellList {
+		// 这个fullCellList保存的是所有用户定义的PhysicalCell，相同的会合成一个chain。
+		// 例如用户定义了V100-Node、V100-Node、4-V100-Node，保存的时候会变成两个Chain，Chain的名字就是V100-Node和4-V100-Node
+		// 实际的数据类型是map[CellChain]map[CellLevel]CellList
+		// level从1开始往上，1是最底层，即leafcell。
 		t.Logf("%v", chain)
 		t.Logf("%v", ccl)
 	}
 	for vc, vcs := range h.vcSchedulers {
 		t.Logf("%v", vc)
+		// 对于VC来说，Chain也是引用的PhysicalCell中用户给定的名字
+		// 相同的Chain会自动合并。
+		// 在写VC定义时，有个硬性要求是第一个域是PhysicalCell，实际就表示绑在哪个Physical Chain上。
+		// 例如用户在PhysicalCell中定义4-V100-Node，在VC里面写4-V100-Node.V100-Node和4-V100-Node.V100-CPU-Socket，
+		// 实际上这两个都是归属于4-V100-Node这个Chain的。
+		// 在VC中，保留的是逻辑上的Cell。如 VC1/9。
 		for chain, ccl := range vcs.getNonPinnedFullCellList() {
 			t.Logf("%v", chain)
 			t.Logf("%v", ccl)
 		}
+		// Pinned Cell就比较简单
 		t.Logf("Pinned cells")
 		for pid, ccl := range vcs.getPinnedCells() {
 			t.Logf(string(pid))
@@ -676,12 +689,14 @@ func printConfig(t *testing.T, h *HivedAlgorithm) {
 }
 
 func testNormalOperations(t *testing.T, h *HivedAlgorithm) {
+	// 先测成功的，然后测失败的，然后把所有pod都删了
 	testCasesThatShouldSucceed(t, h)
 	testCasesThatShouldFail(t, h)
 	testDeletePods(t, h)
 }
 
 func testCasesThatShouldSucceed(t *testing.T, h *HivedAlgorithm) {
+	// allocatedPods和preemptingPods是全局变量，之后还会用到
 	allocatedPods = []*core.Pod{}
 	preemptingPods = []*core.Pod{}
 	var psr internal.PodScheduleResult
@@ -751,6 +766,7 @@ func testDeletePods(t *testing.T, h *HivedAlgorithm) {
 }
 
 func testSuggestedNodes(t *testing.T, configFilePath string) {
+	// 重新init scheduler了
 	sConfig := api.NewConfig(api.InitRawConfig(&configFilePath))
 	h := NewHivedAlgorithm(sConfig)
 	for _, chains := range h.cellChains {
@@ -782,6 +798,7 @@ func testSuggestedNodes(t *testing.T, configFilePath string) {
 	}
 	pod = allPods["pod27"]
 	pod.Annotations[api.AnnotationKeyPodSchedulingSpec] = common.ToYaml(pss[pod.UID])
+	// 这次schedule是无法成功的，因为0.0.3.1不给放
 	psr = h.Schedule(pod, nodes, internal.PreemptingPhase)
 	compareSchedulingResult(t, pod, psr)
 	nodes = append(nodes, "0.0.3.1")
