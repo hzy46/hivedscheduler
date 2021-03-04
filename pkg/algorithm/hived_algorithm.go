@@ -192,7 +192,13 @@ func (h *HivedAlgorithm) Schedule(
 		suggestedNodeSet.Add(n)
 	}
 	var (
+		// 这里第一层是leaf cell number
+		// 在每个aff group中，抽象到最后就是有个总的leafCellType，以及一系列 (leaf cell number, pod num)
+		// 即每个leaf cell number 和 需要这个 leaf cell number 的 pod num。
+		// 相当于每个leaf cell number是一个组。
+		// groupPhysicalPlacement的第一层是leaf cell number，第二层是这个leaf cell number对应的各个pod，第三层是每个pod的leaf cell
 		groupPhysicalPlacement groupPhysicalPlacement // leaf cell number -> a set of pods -> a set of leaf cells of each pod
+		// groupVirtualPlacement 和 groupPhysicalPlacement差不多
 		groupVirtualPlacement  groupVirtualPlacement  // leaf cell number -> a set of pods -> a set of leaf cells of each pod
 		preemptionVictims      map[string]common.Set  // node -> pods
 		waitReason             string
@@ -772,6 +778,9 @@ func (h *HivedAlgorithm) scheduleNewAffinityGroup(
 		suggestedNodes:       suggestedNodes,
 		ignoreSuggestedNodes: s.IgnoreK8sSuggestedNodes,
 	}
+	// 合并相同的leaf cell number
+	// 这里蕴含的假设是，所有leaf cell type是一致的
+	// 最终request就是这个cell type下要有 (leaf cell number, pod num) 的资源
 	for _, m := range s.AffinityGroup.Members {
 		// we will merge group members with same leaf cell number
 		sr.affinityGroupPodNums[m.LeafCellNumber] += m.PodNumber
@@ -808,6 +817,8 @@ func (h *HivedAlgorithm) scheduleAffinityGroupForLeafCellType(
 
 	vcHasType := false
 	for _, chain := range h.cellChains[leafCellType] {
+		// oppo job都可以搜索
+		// 非oppo job，要满足在哪个fc里有
 		if sr.priority < minGuaranteedPriority ||
 			h.vcSchedulers[sr.vc].getNonPinnedPreassignedCells()[chain] != nil {
 			vcHasType = true

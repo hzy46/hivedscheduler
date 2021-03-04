@@ -28,6 +28,8 @@ import (
 
 	"github.com/microsoft/hivedscheduler/pkg/api"
 	"github.com/microsoft/hivedscheduler/pkg/common"
+	"k8s.io/klog"
+
 )
 
 // topologyAwareScheduler can schedule a set of pods on a cluster view.
@@ -78,11 +80,16 @@ func (t *topologyAwareScheduler) Schedule(
 		}
 	}
 	common.SortInt32(sortedPodLeafCellNumbers)
+	// sortedPodLeafCellNumbers 是 把所有需要的pod leaf cell number 平摊开来，并排序
+	// 如(podNum=2, leafCellNum=3)，（podNum=2, leafCellNum=4）
+	// 会变成 [3, 3, 4, 4]
+	klog.Infof("Intra-vc schedule, sortedPodLeafCellNumbers: %v", sortedPodLeafCellNumbers)
 
 	// disable preemption first (reduce preemption)
 	priority := opportunisticPriority
 	t.updateClusterView(priority, suggestedNodes, ignoreSuggestedNodes)
 	// try to fit the pods to a set of nodes
+	// findMpdesForPods根据cv和sortedPodLeafCellNumbers去找
 	selectedNodeIndices, failedReason := findNodesForPods(t.cv, sortedPodLeafCellNumbers)
 	// enable preemption if scheduling failed
 	if selectedNodeIndices == nil && p > opportunisticPriority {
@@ -136,9 +143,13 @@ type node struct {
 // so that nodes with more used leaf cells will be preferred (i.e., pack pods globally across priorities).
 // In this case a feasible pod placement is guaranteed to be found (as long as all nodes are in suggested nodes).
 func (n *node) updateUsedLeafCellNumForPriority(p CellPriority, crossPriorityPack bool) {
+	// GetUsedLeafCellNumAtPriorities() 返回的是 priority -> leaf cell count的一个map
+	// usedLeafCellNumSamePriority 就 直接等于对应的了
 	n.usedLeafCellNumSamePriority = n.c.GetUsedLeafCellNumAtPriorities()[p]
+	// 做初始化，下面计算
 	n.usedLeafCellNumHigherPriority = 0
 	n.freeLeafCellNumAtPriority = n.c.GetTotalLeafCellNum()
+	// crossPriorityPack 看代码目前都是true
 	for priority, num := range n.c.GetUsedLeafCellNumAtPriorities() {
 		if crossPriorityPack {
 			if priority != p {
@@ -151,6 +162,8 @@ func (n *node) updateUsedLeafCellNumForPriority(p CellPriority, crossPriorityPac
 			n.freeLeafCellNumAtPriority -= num
 		}
 	}
+	// 如果crossPriorityPack=true，那么usedLeafCellNumSamePriority实际上是usedLeafCellNum，不管priority是多少
+	// 如果crossPriorityPack=false，那么usedLeafCellNumSamePriority还是正常的，和名字一致的含义：当前priority有多少used leaf cell num
 }
 
 type clusterView []*node
@@ -170,11 +183,15 @@ func newClusterView(ccl ChainCellList) clusterView {
 	cv := clusterView{}
 	for ; l >= lowestLevel; l-- {
 		for _, c := range ccl[l] {
+			// 每个node，找不高于node level的父亲
+			// 要么找到node level，要么找到最top level
+			// 这里感觉还是有很多重复计算的
 			if !cv.containsCell(ancestorNoHigherThanNode(c)) {
 				cv = append(cv, &node{c: c})
 			}
 		}
 	}
+	// cv就是包含了所有node和top-level的cell（比node低）
 	return cv
 }
 
@@ -234,7 +251,9 @@ func (t *topologyAwareScheduler) updateClusterView(
 	ignoreSuggestedNodes bool) {
 
 	for _, n := range t.cv {
+		// 根据priority去update每个node-level cell的view
 		n.updateUsedLeafCellNumForPriority(p, t.crossPriorityPack)
+		// update每个node-level cell是否是suggested的
 		n.healthy, n.suggested, n.nodeAddress = nodeHealthyAndInSuggested(n, suggestedNodes, ignoreSuggestedNodes)
 	}
 }
@@ -274,6 +293,13 @@ func findNodesForPods(cv clusterView, leafCellNums []int32) (pickedNodeIndices [
 	//   1. clusterView = 2-leaf-cell Node, 1-leaf-cell Node
 	//   2. leafCellNums = 1-leaf-cell Pod, 2-leaf-cell Pod
 	//   First 1-leaf-cell Pod may allocate to 2-leaf-cell Node, but the latter pod cannot be fitted anymore.
+	// 这里的排序要参考上面的函数Less
+	// 优先选择：Healthy的、Suggested的、usedLeafCellNumSamePriority大的、usedLeafCellNumHigherPriority小的
+	// 结合：
+	//    如果crossPriorityPack=true，那么usedLeafCellNumSamePriority实际上是usedLeafCellNum，不管priority是多少
+	//    如果crossPriorityPack=false，那么usedLeafCellNumSamePriority还是正常的，和名字一致的含义：当前priority有多少used leaf cell num
+	// 可知crossPriorityPack=true时，就是尽量找那些已经有任务的node，在此之上，远离更高优先级的任务
+	// crossPriorityPack=false时，尽量找和已经有和当前任务priority一样任务的node
 	sort.Stable(cv)
 	pickedNodeIndices = make([]int32, len(leafCellNums)) // indices of the currently picked nodes
 	podIndex := 0
@@ -281,6 +307,9 @@ func findNodesForPods(cv clusterView, leafCellNums []int32) (pickedNodeIndices [
 	var n *node
 	for nodeIndex := 0; nodeIndex < len(cv); {
 		n = cv[nodeIndex]
+		// freeLeafCellNumAtPriority是去除了大于等于当前priority任务后，当前node剩余的leaf Cell Num，相当于是当前完全free的 + 可以通过preemption变成free的
+		// pickedLeafCellNum是在当前node已经选了多少leafCell
+		// 注意上面的for循环中的nodeIndex是不会自增的
 		if n.freeLeafCellNumAtPriority-pickedLeafCellNum >= leafCellNums[podIndex] {
 			// fail when encountering a node that is either bad or not within suggested nodes
 			if !n.healthy {
@@ -298,6 +327,7 @@ func findNodesForPods(cv clusterView, leafCellNums []int32) (pickedNodeIndices [
 				return pickedNodeIndices, ""
 			}
 		} else {
+			// 自增nodeIndex
 			pickedLeafCellNum = 0
 			nodeIndex++
 		}

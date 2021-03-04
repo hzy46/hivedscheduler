@@ -21,12 +21,14 @@ physicalCluster:
     - cellAddress: node1
     - cellAddress: node2
     - cellAddress: node3
+    - cellAddress: node4
+    - cellAddress: node5
 virtualClusters:
     vc1:
       virtualCells:
       - cellType: V100-NODE-POOL.V100-NODE
-        cellNumber: 2
+        cellNumber: 3
     vc2:
       virtualCells:
       - cellType: V100-NODE-POOL.V100-NODE
-        cellNumber: 1
+        cellNumber: 2

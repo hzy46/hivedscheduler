@@ -48,12 +48,15 @@ func getAllNodes(h *HivedAlgorithm) []string {
 	return allNodes	
 }
 
+
+
 func initAll(h *HivedAlgorithm) {
 	// sort chains of each leaf cell type for stability of the test
 	for _, chains := range h.cellChains {
 		sortChains(chains)
 	}
 	setHealthyNodes(h)
+	common.InitLogger()
 }
 
 func printConfig( h *HivedAlgorithm) {
@@ -222,7 +225,7 @@ func test1Schedule4( h *HivedAlgorithm, allNodes []string) {
 	podName := task + "-pod"
 	group := &api.AffinityGroupSpec{
 		Name:    groupName,
-		Members: []api.AffinityGroupMemberSpec{{PodNumber: 1, LeafCellNumber: 8}},
+		Members: []api.AffinityGroupMemberSpec{{PodNumber: 2, LeafCellNumber: 4}, {PodNumber: 2, LeafCellNumber: 3}},
 	}
 	si := common.ToYaml(api.PodSchedulingSpec{
 		VirtualCluster:       "vc2",
@@ -230,7 +233,7 @@ func test1Schedule4( h *HivedAlgorithm, allNodes []string) {
 		LazyPreemptionEnable: false,
 		PinnedCellId:         "",
 		LeafCellType:         "V100",
-		LeafCellNumber:       8,
+		LeafCellNumber:       4,
 		AffinityGroup:        group,
 	})
 	pod := &core.Pod{
