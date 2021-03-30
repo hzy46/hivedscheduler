@@ -819,6 +819,7 @@ func (h *HivedAlgorithm) scheduleAffinityGroupForLeafCellType(
 	for _, chain := range h.cellChains[leafCellType] {
 		// oppo job都可以搜索
 		// 非oppo job，要满足在哪个fc里有
+		// 这里是非常依赖搜索顺序的，搜索的是chain，不一定每次就遍历到那个chain！
 		if sr.priority < minGuaranteedPriority ||
 			h.vcSchedulers[sr.vc].getNonPinnedPreassignedCells()[chain] != nil {
 			vcHasType = true

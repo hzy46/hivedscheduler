@@ -5,5 +5,5 @@ import (
 )
 
 func main() {
-	algorithm.MyTest1("./local-test/config/simple.yaml")
+	algorithm.MyTest1("./local-test/config/full.yaml")
 }

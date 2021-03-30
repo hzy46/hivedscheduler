@@ -75,8 +75,10 @@ func printConfig( h *HivedAlgorithm) {
 		// 对于VC来说，Chain也是引用的PhysicalCell中用户给定的名字
 		// 相同的Chain会自动合并。
 		// 在写VC定义时，有个硬性要求是第一个域是PhysicalCell，实际就表示绑在哪个Physical Chain上。
-		// 例如用户在PhysicalCell中定义4-V100-Node，在VC里面写4-V100-Node.V100-Node和4-V100-Node.V100-CPU-Socket，
+		// 例如用户在PhysicalCell中定义4-V100-Node，在VC里面写4-V100-Node.V100-Node和4-V100-Node.V100-Node.V100-CPU-Socket，
 		// 实际上这两个都是归属于4-V100-Node这个Chain的。
+		// 另外，就算Physical Cell的底层是一样的，但他们也是不同的chain。
+		// 如写 4-V100-Node.V100-Node和3-V100-Node.V100-Node，虽然底层是一样的，但实际是在不同的Chain
 		// 在VC中，保留的是逻辑上的Cell。如 VC1/9。
 		for chain, ccl := range vcs.getNonPinnedFullCellList() {
 			fmt.Printf("%v\n", chain)
@@ -125,11 +127,11 @@ func test1Schedule1( h *HivedAlgorithm, allNodes []string) {
 		Members: []api.AffinityGroupMemberSpec{{PodNumber: 1, LeafCellNumber: 1}},
 	}
 	si := common.ToYaml(api.PodSchedulingSpec{
-		VirtualCluster:       "vc1",
+		VirtualCluster:       "VC1",
 		Priority:             0,
-		LazyPreemptionEnable: false,
+		LazyPreemptionEnable: true,
 		PinnedCellId:         "",
-		LeafCellType:         "V100",
+		LeafCellType:         "DGX2-V100",
 		LeafCellNumber:       1,
 		AffinityGroup:        group,
 	})
@@ -148,8 +150,8 @@ func test1Schedule1( h *HivedAlgorithm, allNodes []string) {
 	}
 	fmt.Printf("%v\n", task)
 	printPsr(&psr)
+	fmt.Print("\n")
 }
-
 
 func test1Schedule2( h *HivedAlgorithm, allNodes []string) {
 	task := "test1Schedule2"
@@ -160,11 +162,11 @@ func test1Schedule2( h *HivedAlgorithm, allNodes []string) {
 		Members: []api.AffinityGroupMemberSpec{{PodNumber: 1, LeafCellNumber: 1}},
 	}
 	si := common.ToYaml(api.PodSchedulingSpec{
-		VirtualCluster:       "vc1",
-		Priority:             0,
-		LazyPreemptionEnable: false,
+		VirtualCluster:       "VC1",
+		Priority:             1,
+		LazyPreemptionEnable: true,
 		PinnedCellId:         "",
-		LeafCellType:         "V100",
+		LeafCellType:         "DGX2-V100",
 		LeafCellNumber:       1,
 		AffinityGroup:        group,
 	})
@@ -183,7 +185,9 @@ func test1Schedule2( h *HivedAlgorithm, allNodes []string) {
 	}
 	fmt.Printf("%v\n", task)
 	printPsr(&psr)
+	fmt.Print("\n")
 }
+
 
 func test1Schedule3( h *HivedAlgorithm, allNodes []string) {
 	task := "test1Schedule3"
@@ -191,15 +195,15 @@ func test1Schedule3( h *HivedAlgorithm, allNodes []string) {
 	podName := task + "-pod"
 	group := &api.AffinityGroupSpec{
 		Name:    groupName,
-		Members: []api.AffinityGroupMemberSpec{{PodNumber: 1, LeafCellNumber: 4}},
+		Members: []api.AffinityGroupMemberSpec{{PodNumber: 1, LeafCellNumber: 8}},
 	}
 	si := common.ToYaml(api.PodSchedulingSpec{
-		VirtualCluster:       "vc1",
-		Priority:             0,
-		LazyPreemptionEnable: false,
+		VirtualCluster:       "VC1",
+		Priority:             2,
+		LazyPreemptionEnable: true,
 		PinnedCellId:         "",
-		LeafCellType:         "V100",
-		LeafCellNumber:       4,
+		LeafCellType:         "DGX2-V100",
+		LeafCellNumber:       8,
 		AffinityGroup:        group,
 	})
 	pod := &core.Pod{
@@ -217,6 +221,7 @@ func test1Schedule3( h *HivedAlgorithm, allNodes []string) {
 	}
 	fmt.Printf("%v\n", task)
 	printPsr(&psr)
+	fmt.Print("\n")
 }
 
 func test1Schedule4( h *HivedAlgorithm, allNodes []string) {
@@ -225,49 +230,14 @@ func test1Schedule4( h *HivedAlgorithm, allNodes []string) {
 	podName := task + "-pod"
 	group := &api.AffinityGroupSpec{
 		Name:    groupName,
-		Members: []api.AffinityGroupMemberSpec{{PodNumber: 2, LeafCellNumber: 4}, {PodNumber: 2, LeafCellNumber: 3}},
-	}
-	si := common.ToYaml(api.PodSchedulingSpec{
-		VirtualCluster:       "vc2",
-		Priority:             0,
-		LazyPreemptionEnable: false,
-		PinnedCellId:         "",
-		LeafCellType:         "V100",
-		LeafCellNumber:       4,
-		AffinityGroup:        group,
-	})
-	pod := &core.Pod{
-		ObjectMeta: meta.ObjectMeta{
-			Name:        podName,
-			Namespace:   "test",
-			UID:         types.UID(podName),
-			Annotations: map[string]string{ "hivedscheduler.microsoft.com/pod-scheduling-spec": si },
-		},
-	}
-	psr := h.Schedule(pod, allNodes, internal.PreemptingPhase)
-	if psr.PodBindInfo != nil {
-		allocatedPod := internal.NewBindingPod(pod, psr.PodBindInfo)
-		h.AddAllocatedPod(allocatedPod)
-	}
-	fmt.Printf("%v\n", task)
-	printPsr(&psr)
-}
-
-
-func test1Schedule5( h *HivedAlgorithm, allNodes []string) {
-	task := "test1Schedule5"
-	groupName := task + "-group"
-	podName := task + "-pod"
-	group := &api.AffinityGroupSpec{
-		Name:    groupName,
 		Members: []api.AffinityGroupMemberSpec{{PodNumber: 1, LeafCellNumber: 1}},
 	}
 	si := common.ToYaml(api.PodSchedulingSpec{
-		VirtualCluster:       "vc2",
-		Priority:             1,
-		LazyPreemptionEnable: false,
+		VirtualCluster:       "VC1",
+		Priority:             -1,
+		LazyPreemptionEnable: true,
 		PinnedCellId:         "",
-		LeafCellType:         "V100",
+		LeafCellType:         "DGX2-V100",
 		LeafCellNumber:       1,
 		AffinityGroup:        group,
 	})
@@ -286,7 +256,82 @@ func test1Schedule5( h *HivedAlgorithm, allNodes []string) {
 	}
 	fmt.Printf("%v\n", task)
 	printPsr(&psr)
+	fmt.Print("\n")
 }
+
+
+func test1Schedule5_1( h *HivedAlgorithm, allNodes []string) {
+	task := "test1Schedule5"
+	groupName := task + "-group"
+	podName := task + "-pod1"
+	group := &api.AffinityGroupSpec{
+		Name:    groupName,
+		Members: []api.AffinityGroupMemberSpec{{PodNumber: 2, LeafCellNumber: 16}},
+	}
+	si := common.ToYaml(api.PodSchedulingSpec{
+		VirtualCluster:       "VC1",
+		Priority:             1,
+		LazyPreemptionEnable: true,
+		PinnedCellId:         "VC1-YQW-DGX2",
+		LeafCellType:         "DGX2-V100",
+		LeafCellNumber:       16,
+		AffinityGroup:        group,
+	})
+	pod := &core.Pod{
+		ObjectMeta: meta.ObjectMeta{
+			Name:        podName,
+			Namespace:   "test",
+			UID:         types.UID(podName),
+			Annotations: map[string]string{ "hivedscheduler.microsoft.com/pod-scheduling-spec": si },
+		},
+	}
+	psr := h.Schedule(pod, allNodes, internal.PreemptingPhase)
+	if psr.PodBindInfo != nil {
+		allocatedPod := internal.NewBindingPod(pod, psr.PodBindInfo)
+		h.AddAllocatedPod(allocatedPod)
+	}
+	fmt.Printf("%v\n", task)
+	printPsr(&psr)
+	fmt.Print("\n")
+}
+
+
+
+func test1Schedule5_2( h *HivedAlgorithm, allNodes []string) {
+	task := "test1Schedule5"
+	groupName := task + "-group"
+	podName := task + "-pod2"
+	group := &api.AffinityGroupSpec{
+		Name:    groupName,
+		Members: []api.AffinityGroupMemberSpec{{PodNumber: 2, LeafCellNumber: 16}},
+	}
+	si := common.ToYaml(api.PodSchedulingSpec{
+		VirtualCluster:       "VC1",
+		Priority:             1,
+		LazyPreemptionEnable: true,
+		PinnedCellId:         "VC1-YQW-DGX2",
+		LeafCellType:         "DGX2-V100",
+		LeafCellNumber:       16,
+		AffinityGroup:        group,
+	})
+	pod := &core.Pod{
+		ObjectMeta: meta.ObjectMeta{
+			Name:        podName,
+			Namespace:   "test",
+			UID:         types.UID(podName),
+			Annotations: map[string]string{ "hivedscheduler.microsoft.com/pod-scheduling-spec": si },
+		},
+	}
+	psr := h.Schedule(pod, allNodes, internal.PreemptingPhase)
+	if psr.PodBindInfo != nil {
+		allocatedPod := internal.NewBindingPod(pod, psr.PodBindInfo)
+		h.AddAllocatedPod(allocatedPod)
+	}
+	fmt.Printf("%v\n", task)
+	printPsr(&psr)
+	fmt.Print("\n")
+}
+
 
 
 
@@ -297,9 +342,15 @@ func MyTest1(configFilePath string) {
 	initAll(h)
 	allNodes := getAllNodes(h)
 	printConfig(h)
+	// 搜索chain（这个chain是随机的，应该不能依赖！）
 	test1Schedule1(h, allNodes)
+	// 同样搜索，放到上面的旁边
 	test1Schedule2(h, allNodes)
+	// 同一个node 同一个pod的 best affinity
 	test1Schedule3(h, allNodes)
+	// oppo job ：尽量和oppojob靠近；会远离现有job
 	test1Schedule4(h, allNodes)
-	test1Schedule5(h, allNodes)
+	// Pinned Cell 比较简单
+	test1Schedule5_1(h, allNodes)
+	test1Schedule5_2(h, allNodes)
 }

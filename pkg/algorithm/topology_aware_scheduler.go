@@ -56,7 +56,6 @@ func NewTopologyAwareScheduler(
 	ccl ChainCellList,
 	levelLeafCellNum map[CellLevel]int32,
 	crossPriorityPack bool) *topologyAwareScheduler {
-
 	return &topologyAwareScheduler{
 		cv:                newClusterView(ccl),
 		levelLeafCellNum:  levelLeafCellNum,
@@ -87,10 +86,14 @@ func (t *topologyAwareScheduler) Schedule(
 
 	// disable preemption first (reduce preemption)
 	priority := opportunisticPriority
+	// 使用最低优先级去找。
 	t.updateClusterView(priority, suggestedNodes, ignoreSuggestedNodes)
 	// try to fit the pods to a set of nodes
 	// findMpdesForPods根据cv和sortedPodLeafCellNumbers去找
 	selectedNodeIndices, failedReason := findNodesForPods(t.cv, sortedPodLeafCellNumbers)
+	klog.Infof("First pass findNodesForPods results: %v", selectedNodeIndices)
+	// selectedNodeIndices 的 结果的长度和sortedPodLeafCellNumbers 是一致的，如[0, 0, 1, 1] 就表示 sortedPodLeafCellNumbers里的
+	// 4 个 pod 分别放在 node 0, 0, 1, 1上
 	// enable preemption if scheduling failed
 	if selectedNodeIndices == nil && p > opportunisticPriority {
 		priority = p
@@ -100,6 +103,7 @@ func (t *topologyAwareScheduler) Schedule(
 	if selectedNodeIndices == nil {
 		return nil, failedReason
 	}
+	// selectedNodeIndices 是 所有被选定的 node，下面在这些 node 中挑选 leaf cell
 	// find leaf cells inside the selected node for each pod
 	selectedNodes := make(CellList, len(sortedPodLeafCellNumbers))
 	for i := 0; i < len(selectedNodeIndices); i++ {
@@ -144,8 +148,10 @@ type node struct {
 // In this case a feasible pod placement is guaranteed to be found (as long as all nodes are in suggested nodes).
 func (n *node) updateUsedLeafCellNumForPriority(p CellPriority, crossPriorityPack bool) {
 	// GetUsedLeafCellNumAtPriorities() 返回的是 priority -> leaf cell count的一个map
-	// usedLeafCellNumSamePriority 就 直接等于对应的了
-	n.usedLeafCellNumSamePriority = n.c.GetUsedLeafCellNumAtPriorities()[p]
+	// usedLeafCellNumSamePriority 就 直接等于对应 priority 的 使用数
+	klog.Infof("updateUsedLeafCellNumForPriority node %v pod priority: %v crossPriorityPack: %v", n.c.GetAddress(), p, crossPriorityPack)
+	klog.Infof("updateUsedLeafCellNumForPriority returned UsedLeafCellNumAtPriorities", n.c.GetUsedLeafCellNumAtPriorities())
+ 	n.usedLeafCellNumSamePriority = n.c.GetUsedLeafCellNumAtPriorities()[p]
 	// 做初始化，下面计算
 	n.usedLeafCellNumHigherPriority = 0
 	n.freeLeafCellNumAtPriority = n.c.GetTotalLeafCellNum()
@@ -162,8 +168,12 @@ func (n *node) updateUsedLeafCellNumForPriority(p CellPriority, crossPriorityPac
 			n.freeLeafCellNumAtPriority -= num
 		}
 	}
+	klog.Infof("updateUsedLeafCellNumForPriority node %v usedLeafCellNumSamePriority: %v usedLeafCellNumHigherPriority %v", 
+		n.c.GetAddress(), n.usedLeafCellNumSamePriority, n.usedLeafCellNumHigherPriority)
 	// 如果crossPriorityPack=true，那么usedLeafCellNumSamePriority实际上是usedLeafCellNum，不管priority是多少
 	// 如果crossPriorityPack=false，那么usedLeafCellNumSamePriority还是正常的，和名字一致的含义：当前priority有多少used leaf cell num
+	// usedLeafCellNumHigherPriority 表示比当前 priority 严格更高的 priority 的job 用了多少leafcell
+	// freeLeafCellNumAtPriority 表示空闲 leaf cell number  + 严格小于当前 priority 的 job 用了多少leaf cell
 }
 
 type clusterView []*node
@@ -249,6 +259,7 @@ func (t *topologyAwareScheduler) updateClusterView(
 	p CellPriority,
 	suggestedNodes common.Set,
 	ignoreSuggestedNodes bool) {
+	klog.Infof("updateClusterView priority: %v crossPriorityPack: %v", p, t.crossPriorityPack)
 
 	for _, n := range t.cv {
 		// 根据priority去update每个node-level cell的view
@@ -299,8 +310,22 @@ func findNodesForPods(cv clusterView, leafCellNums []int32) (pickedNodeIndices [
 	//    如果crossPriorityPack=true，那么usedLeafCellNumSamePriority实际上是usedLeafCellNum，不管priority是多少
 	//    如果crossPriorityPack=false，那么usedLeafCellNumSamePriority还是正常的，和名字一致的含义：当前priority有多少used leaf cell num
 	// 可知crossPriorityPack=true时，就是尽量找那些已经有任务的node，在此之上，远离更高优先级的任务
-	// crossPriorityPack=false时，尽量找和已经有和当前任务priority一样任务的node
+	// crossPriorityPack=false时，尽量找和已经有和当前任务priority一样任务的node 
+	// 看代码 正常job的crossPriorityPack 目前都是true，oppo job的
+	// 在正常job， crossPriorityPack = true的情况下：
+	//     第一遍， priority 会设置为 -1，此时usedLeafCellNumSamePriority = 所有priority的任务占用的leaf cell number；
+	//     usedLeafCellNumHigherPriority = 非 oppo 任务占用的leaf cell number; 这一遍不会抢占任何任务。
+	//     第二遍， priority 是正常值，此时 usedLeafCellNumSamePriority = 所有priority的任务占用的leaf cell number
+	//     usedLeafCellNumHigherPriority = 比当前priority高的任务占用的leaf cell number;
+	//  此外，oppo job是不分vc进行schedule的, crossPriorityPack = false 意味着usedLeafCellNumSamePriority是node上oppo job的个数，
+	//  usedLeafCellNumHigherPriority 是其他所有job的个数
 	sort.Stable(cv)
+	// 输出结果
+	klog.Infof("findNodesForPods leaf cell nums %v", leafCellNums)
+	for _, node := range cv {
+		klog.Infof("findNodesForPods, sorted node: %v address: %v usedLeafCellNumSamePriority (usedLeafCellNum): %v usedLeafCellNumHigherPriority: %v", 
+			node.c.GetAddress(), node.nodeAddress, node.usedLeafCellNumSamePriority, node.usedLeafCellNumHigherPriority)
+	}
 	pickedNodeIndices = make([]int32, len(leafCellNums)) // indices of the currently picked nodes
 	podIndex := 0
 	pickedLeafCellNum := int32(0)
@@ -343,6 +368,22 @@ func findLeafCellsInNode(
 	availableLeafCells CellList,
 	levelLeafCellNum map[CellLevel]int32) (CellList, CellList) {
 
+	// levelLeafCellNum 是对这个cell chain来说的
+	// 表示每个 level 上会有几个 leaf cell
+	// 1 一定对应 1，就是底层的
+	// 如果一个chain只包含node，且一个node定义了switch、socket的8gpu node就是[1:1 2:2 3:4 4:8]
+	// 如果node不定义switch和socket，那就是[1:1 2:8]
+
+	// 这里affinity的定义：给定leaf cell的位置，这些leaf cell的最近公共祖先的Cell level (cell level的底部是1，依次累加)
+	// 希望能找到最低的affinity
+
+	// 注意是对同一个pod去找，不同pod依次考虑
+	// 例如node的level是[1:1 2:2 3:4 4:8]，index 0 gpu被占
+	// 如果是 1 个 2 gpu pod，则会占到 2,3 卡。因为 2 ，3卡的affinity level比 1,2低。
+	// 但如果是两个 1 gpu pod，则会占到 1，2 卡，因为它们是分别考虑
+
+	klog.Infof("findLeafCellsInNode cell: %v leafCellNum: %v priority: %v availableLeafCells: %v levelLeafCellNum: %v",
+		n.GetAddress(), leafCellNum, p, availableLeafCells, levelLeafCellNum)
 	// indices of the currently picked leaf cells
 	currentLeafCellIndices := make([]int32, leafCellNum)
 	// affinity of the currently picked leaf cells, defined as the lowest common ancestor
@@ -355,8 +396,10 @@ func findLeafCellsInNode(
 	// the best affinity ever seen (i.e., lowest level of lowest common ancestor of a set of leaf cells)
 	bestAffinity := highestLevel
 	// the optimal affinity for the leaf cell number, i.e., the lowest possible of the lowest common ancestor of leaf cells
+	// 理论上的最佳affinity
 	optimalAffinity := getOptimalAffinity(leafCellNum, levelLeafCellNum)
 
+	// 如果没有availableLeafCells的话，就分从node里取（这个发生在第一次，以后就不用取了）
 	if availableLeafCells == nil {
 		availableLeafCells = CellList{}
 		preemptibleLeafCells := CellList{}
@@ -364,6 +407,10 @@ func findLeafCellsInNode(
 		// free leaf cells will be used first (before preemptible leaf cells)
 		availableLeafCells = append(availableLeafCells, preemptibleLeafCells...)
 	}
+	// 这个availableLeafCells就是所有free或可以preempte的leaf cell的数组
+	// 其中free cell一定在前面
+	// 算法先不具体看了
+	klog.Infof("findLeafCellsInNode real availableLeafCells: %v", availableLeafCells)
 	availableLeafCellIndex := int32(0)
 	searchLeafCellIndex := int32(0)
 	var leafCell Cell
